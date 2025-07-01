@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural Recognition</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.16.3/ort.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.2) 0%, transparent 50%),
+                linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 24px;
+            padding: 48px;
+            box-shadow: 
+                0 8px 32px rgba(31, 38, 135, 0.37),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            text-align: center;
+            max-width: 480px;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+        }
+
+        h1 {
+            color: rgba(0, 0, 0, 0.8);
+            margin-bottom: 32px;
+            font-size: 32px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+
+        .instructions {
+            margin-bottom: 24px;
+            padding: 16px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            font-size: 14px;
+            color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+        }
+
+        .status {
+            margin-bottom: 24px;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .status.loading {
+            background: rgba(255, 193, 7, 0.15);
+            color: rgba(255, 193, 7, 0.8);
+            border: 1px solid rgba(255, 193, 7, 0.2);
+        }
+
+        .status.ready {
+            background: rgba(52, 199, 89, 0.15);
+            color: rgba(52, 199, 89, 0.8);
+            border: 1px solid rgba(52, 199, 89, 0.2);
+        }
+
+        .status.error {
+            background: rgba(255, 59, 48, 0.15);
+            color: rgba(255, 59, 48, 0.8);
+            border: 1px solid rgba(255, 59, 48, 0.2);
+        }
+
+        .drawing-area {
+            margin: 32px 0;
+            display: flex;
+            justify-content: center;
+        }
+
+        #canvas {
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 20px;
+            cursor: crosshair;
+            background: rgba(0, 0, 0, 0.8);
+            box-shadow: 
+                0 4px 16px rgba(0, 0, 0, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        #canvas:hover {
+            transform: translateY(-2px);
+            box-shadow: 
+                0 12px 32px rgba(0, 0, 0, 0.15),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        .controls {
+            margin: 24px 0;
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+        }
+
+        button {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            color: rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            position: relative;
+            overflow: hidden;
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        button:hover::before {
+            left: 100%;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            background: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }
+
+        button:active {
+            transform: translateY(0);
+            transition: all 0.1s;
+        }
+
+        button:disabled {
+            background: rgba(0, 0, 0, 0.05);
+            color: rgba(0, 0, 0, 0.3);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        button:disabled::before {
+            display: none;
+        }
+
+        .prediction {
+            margin-top: 32px;
+            padding: 24px;
+            background: linear-gradient(135deg, 
+                rgba(120, 119, 198, 0.2) 0%, 
+                rgba(255, 119, 198, 0.2) 50%,
+                rgba(120, 219, 255, 0.2) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            color: rgba(0, 0, 0, 0.8);
+            font-size: 20px;
+            font-weight: 600;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(20px);
+            box-shadow: 
+                0 8px 32px rgba(31, 38, 135, 0.15),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .prediction::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+        }
+
+        strong {
+            font-size: 28px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 32px 24px;
+                margin: 16px;
+            }
+
+            h1 {
+                font-size: 28px;
+            }
+
+            #canvas {
+                width: 240px;
+                height: 240px;
+            }
+
+            .controls {
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Reconnaissance de Chiffres</h1>
+        
+        <div class="instructions">
+            Dessinez un chiffre de 0 à 9 dans le carré ci-dessous
+        </div>
+
+        <div class="status" id="status">Chargement en cours...</div>
+
+        <div class="drawing-area">
+            <canvas id="canvas" width="280" height="280"></canvas>
+        </div>
+
+        <div class="controls">
+            <button onclick="clearCanvas()">Effacer</button>
+            <button onclick="predict()" id="predictBtn" disabled>Prédire</button>
+        </div>
+
+        <div class="prediction" id="prediction">
+            Dessinez un chiffre pour commencer
+        </div>
+    </div>
+
+    <script>
+        let canvas, ctx, isDrawing = false;
+        let session = null;
+
+        function initCanvas() {
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 15;
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseout', stopDrawing);
+            canvas.addEventListener('touchstart', handleTouch);
+            canvas.addEventListener('touchmove', handleTouch);
+            canvas.addEventListener('touchend', stopDrawing);
+        }
+
+        function startDrawing(e) {
+            isDrawing = true;
+            draw(e);
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        }
+
+        function stopDrawing() {
+            if (!isDrawing) return;
+            isDrawing = false;
+            ctx.beginPath();
+        }
+
+        function handleTouch(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent(
+                e.type === 'touchstart' ? 'mousedown' : 
+                e.type === 'touchmove' ? 'mousemove' : 'mouseup', 
+                {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY
+                }
+            );
+            canvas.dispatchEvent(mouseEvent);
+        }
+
+        function clearCanvas() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('prediction').textContent = 'Dessinez un chiffre pour commencer';
+        }
+
+        function preprocessImage() {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 28;
+            tempCanvas.height = 28;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            tempCtx.fillStyle = '#000';
+            tempCtx.fillRect(0, 0, 28, 28);
+            tempCtx.imageSmoothingEnabled = true;
+            tempCtx.drawImage(canvas, 0, 0, 28, 28);
+            
+            const imageData = tempCtx.getImageData(0, 0, 28, 28);
+            const data = imageData.data;
+            const input = new Float32Array(28 * 28);
+            
+            for (let i = 0; i < 28 * 28; i++) {
+                const pixelIndex = i * 4;
+                const grayscale = 0.299 * data[pixelIndex] + 0.587 * data[pixelIndex + 1] + 0.114 * data[pixelIndex + 2];
+                input[i] = grayscale / 255.0;
+            }
+            
+            return input;
+        }
+
+        async function predict() {
+            if (!session) {
+                updateStatus('Modèle non chargé', 'error');
+                return;
+            }
+
+            try {
+                const inputData = preprocessImage();
+                const inputTensor = new ort.Tensor('float32', inputData, [1, 1, 28, 28]);
+                const results = await session.run({ input: inputTensor });
+                const probabilities = softmax(Array.from(results.output.data));
+                const maxIndex = probabilities.indexOf(Math.max(...probabilities));
+                const confidence = (probabilities[maxIndex] * 100).toFixed(1);
+                
+                document.getElementById('prediction').innerHTML = 
+                    `Prédiction : <strong>${maxIndex}</strong> (${confidence}% de confiance)`;
+                
+            } catch (error) {
+                console.error('Erreur de prédiction:', error);
+                updateStatus('Erreur de prédiction', 'error');
+            }
+        }
+
+        function softmax(arr) {
+            const max = Math.max(...arr);
+            const exps = arr.map(x => Math.exp(x - max));
+            const sum = exps.reduce((a, b) => a + b);
+            return exps.map(x => x / sum);
+        }
+
+        function updateStatus(message, type) { 
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+
+        async function loadModel() {
+            try {
+                updateStatus('Chargement du modèle...', 'loading');
+                const modelUrl = 'mnist_cnn.onnx';
+                session = await ort.InferenceSession.create(modelUrl);
+                updateStatus('Modèle chargé avec succès', 'ready');
+                document.getElementById('predictBtn').disabled = false;
+            } catch (error) {
+                console.error('Erreur de chargement:', error);
+                updateStatus('Impossible de charger le modèle ONNX', 'error');
+            }
+        }
+
+        window.onload = function() {
+            initCanvas();
+            loadModel();
+        };
+    </script>
+</body>
+</html>
